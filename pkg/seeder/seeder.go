@@ -151,6 +151,17 @@ func (s *Seeder) RunUp(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	for _, a := range applied {
+		if a.Dirty {
+			if a.WhyDirty != "" {
+				return fmt.Errorf("version %d (%s) is dirty: %s — you need to down this version first to process",
+					a.Version, a.Name, a.WhyDirty)
+			}
+			return fmt.Errorf("version %d (%s) is dirty — you need to down this version first to process",
+				a.Version, a.Name)
+		}
+	}
+
 	appliedMap := make(map[int64]bool)
 	for _, a := range applied {
 		appliedMap[a.Version] = true
@@ -170,14 +181,17 @@ func (s *Seeder) RunUp(ctx context.Context) error {
 			continue
 		}
 		// Mark dirty
-		if err := s.driver.RecordVersion(ctx, seed.Version, seed.Name, true); err != nil {
+		if err := s.driver.RecordVersion(ctx, seed.Version, seed.Name, true, ""); err != nil {
 			return err
 		}
 		if err := seed.Run(ctx, db); err != nil {
+			if setErr := s.driver.SetDirty(ctx, seed.Version, true, err.Error()); setErr != nil {
+				// ignore
+			}
 			return fmt.Errorf("seed %d_%s failed: %w", seed.Version, seed.Name, err)
 		}
 		// Mark clean
-		if err := s.driver.SetDirty(ctx, seed.Version, false); err != nil {
+		if err := s.driver.SetDirty(ctx, seed.Version, false, ""); err != nil {
 			return err
 		}
 	}
@@ -193,6 +207,20 @@ func (s *Seeder) RunDown(ctx context.Context, steps int) error {
 	sort.Slice(applied, func(i, j int) bool {
 		return applied[i].Version > applied[j].Version
 	})
+
+	// Check for dirty.
+	// Only the latest version (applied[0]) is allowed to be dirty.
+	for i, a := range applied {
+		if a.Dirty && i > 0 {
+			if a.WhyDirty != "" {
+				return fmt.Errorf("version %d (%s) is dirty: %s — you need to down newer versions first to process",
+					a.Version, a.Name, a.WhyDirty)
+			}
+			return fmt.Errorf("version %d (%s) is dirty — you need to down newer versions first to process",
+				a.Version, a.Name)
+		}
+	}
+
 	if steps > 0 && steps < len(applied) {
 		applied = applied[:steps]
 	}
@@ -212,10 +240,13 @@ func (s *Seeder) RunDown(ctx context.Context, steps int) error {
 		if !ok {
 			continue
 		}
-		if err := s.driver.SetDirty(ctx, a.Version, true); err != nil {
+		if err := s.driver.SetDirty(ctx, a.Version, true, ""); err != nil {
 			return err
 		}
 		if err := seed.Run(ctx, db); err != nil {
+			if setErr := s.driver.SetDirty(ctx, a.Version, true, err.Error()); setErr != nil {
+				// ignore
+			}
 			return fmt.Errorf("rollback %d_%s failed: %w", seed.Version, seed.Name, err)
 		}
 		if err := s.driver.RemoveVersion(ctx, a.Version); err != nil {

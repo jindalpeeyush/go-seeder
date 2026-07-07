@@ -142,6 +142,7 @@ func (d *MongoDriver) GetAppliedVersions(ctx context.Context) ([]AppliedSeed, er
 			Version   int64     `bson:"version"`
 			Name      string    `bson:"seed_name"`
 			Dirty     bool      `bson:"dirty"`
+			WhyDirty  string    `bson:"why_dirty"`
 			AppliedAt time.Time `bson:"applied_at"`
 		}
 		if err := cursor.Decode(&doc); err != nil {
@@ -149,26 +150,27 @@ func (d *MongoDriver) GetAppliedVersions(ctx context.Context) ([]AppliedSeed, er
 		}
 		seeds = append(seeds, AppliedSeed{
 			Version: doc.Version, Name: doc.Name,
-			Dirty: doc.Dirty, AppliedAt: doc.AppliedAt,
+			Dirty: doc.Dirty, WhyDirty: doc.WhyDirty, AppliedAt: doc.AppliedAt,
 		})
 	}
 	return seeds, cursor.Err()
 }
 
-func (d *MongoDriver) RecordVersion(ctx context.Context, version int64, name string, dirty bool) error {
+func (d *MongoDriver) RecordVersion(ctx context.Context, version int64, name string, dirty bool, whyDirty string) error {
 	_, err := d.db.Collection("seeder_versions").InsertOne(ctx, bson.D{
 		{Key: "version", Value: version},
 		{Key: "seed_name", Value: name},
 		{Key: "dirty", Value: dirty},
+		{Key: "why_dirty", Value: whyDirty},
 		{Key: "applied_at", Value: time.Now().UTC()},
 	})
 	return err
 }
 
-func (d *MongoDriver) SetDirty(ctx context.Context, version int64, dirty bool) error {
+func (d *MongoDriver) SetDirty(ctx context.Context, version int64, dirty bool, whyDirty string) error {
 	_, err := d.db.Collection("seeder_versions").UpdateOne(ctx,
 		bson.D{{Key: "version", Value: version}},
-		bson.D{{Key: "$set", Value: bson.D{{Key: "dirty", Value: dirty}}}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "dirty", Value: dirty}, {Key: "why_dirty", Value: whyDirty}}}},
 	)
 	return err
 }

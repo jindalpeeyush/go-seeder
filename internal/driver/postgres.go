@@ -98,15 +98,20 @@ func (d *PostgresDriver) CreateVersionTable(ctx context.Context) error {
 		version    BIGINT PRIMARY KEY,
 		seed_name  TEXT NOT NULL,
 		dirty      BOOLEAN NOT NULL DEFAULT FALSE,
+		why_dirty  TEXT,
 		applied_at TIMESTAMP NOT NULL DEFAULT NOW()
 	)`
-	_, err := d.db.ExecContext(ctx, q)
-	return err
+	if _, err := d.db.ExecContext(ctx, q); err != nil {
+		return err
+	}
+	// Try adding why_dirty in case the table already existed without it
+	_, _ = d.db.ExecContext(ctx, "ALTER TABLE seeder_versions ADD COLUMN IF NOT EXISTS why_dirty TEXT")
+	return nil
 }
 
 func (d *PostgresDriver) GetAppliedVersions(ctx context.Context) ([]AppliedSeed, error) {
 	rows, err := d.db.QueryContext(ctx,
-		"SELECT version, seed_name, dirty, applied_at FROM seeder_versions ORDER BY version ASC")
+		"SELECT version, seed_name, dirty, COALESCE(why_dirty, '') AS why_dirty, applied_at FROM seeder_versions ORDER BY version ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +120,7 @@ func (d *PostgresDriver) GetAppliedVersions(ctx context.Context) ([]AppliedSeed,
 	var seeds []AppliedSeed
 	for rows.Next() {
 		var s AppliedSeed
-		if err := rows.Scan(&s.Version, &s.Name, &s.Dirty, &s.AppliedAt); err != nil {
+		if err := rows.Scan(&s.Version, &s.Name, &s.Dirty, &s.WhyDirty, &s.AppliedAt); err != nil {
 			return nil, err
 		}
 		seeds = append(seeds, s)
@@ -123,16 +128,16 @@ func (d *PostgresDriver) GetAppliedVersions(ctx context.Context) ([]AppliedSeed,
 	return seeds, rows.Err()
 }
 
-func (d *PostgresDriver) RecordVersion(ctx context.Context, version int64, name string, dirty bool) error {
+func (d *PostgresDriver) RecordVersion(ctx context.Context, version int64, name string, dirty bool, whyDirty string) error {
 	_, err := d.db.ExecContext(ctx,
-		"INSERT INTO seeder_versions (version, seed_name, dirty, applied_at) VALUES ($1, $2, $3, $4)",
-		version, name, dirty, time.Now().UTC())
+		"INSERT INTO seeder_versions (version, seed_name, dirty, why_dirty, applied_at) VALUES ($1, $2, $3, $4, $5)",
+		version, name, dirty, whyDirty, time.Now().UTC())
 	return err
 }
 
-func (d *PostgresDriver) SetDirty(ctx context.Context, version int64, dirty bool) error {
+func (d *PostgresDriver) SetDirty(ctx context.Context, version int64, dirty bool, whyDirty string) error {
 	_, err := d.db.ExecContext(ctx,
-		"UPDATE seeder_versions SET dirty = $1 WHERE version = $2", dirty, version)
+		"UPDATE seeder_versions SET dirty = $1, why_dirty = $2 WHERE version = $3", dirty, whyDirty, version)
 	return err
 }
 

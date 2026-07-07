@@ -90,12 +90,6 @@ func (e *Engine) Down(ctx context.Context, steps int) error {
 		defer e.driver.Close(ctx)
 	}
 
-	if !e.cfg.DryRun {
-		if err := e.checkDirty(ctx); err != nil {
-			return err
-		}
-	}
-
 	applied, err := e.getAppliedReversed(ctx)
 	if err != nil {
 		return err
@@ -103,6 +97,19 @@ func (e *Engine) Down(ctx context.Context, steps int) error {
 	if len(applied) == 0 {
 		e.log.Println("No seeds to roll back")
 		return nil
+	}
+
+	if !e.cfg.DryRun {
+		for i, a := range applied {
+			if a.Dirty && i > 0 {
+				if a.WhyDirty != "" {
+					return fmt.Errorf("version %d (%s) is dirty: %s — you need to down newer versions first to process",
+						a.Version, a.Name, a.WhyDirty)
+				}
+				return fmt.Errorf("version %d (%s) is dirty — you need to down newer versions first to process",
+					a.Version, a.Name)
+			}
+		}
 	}
 
 	if steps > 0 && steps < len(applied) {
@@ -143,7 +150,7 @@ func (e *Engine) Force(ctx context.Context, version int64) error {
 		}
 		// Clear dirty on the forced version
 		if a.Version == version && a.Dirty {
-			e.driver.SetDirty(ctx, version, false)
+			e.driver.SetDirty(ctx, version, false, "")
 		}
 	}
 
@@ -154,22 +161,24 @@ func (e *Engine) Force(ctx context.Context, version int64) error {
 // --- internals ---
 
 func (e *Engine) connect(ctx context.Context) error {
-	drv, err := driver.FromDSN(e.cfg.Database)
-	if err != nil {
-		return err
+	if e.driver == nil {
+		drv, err := driver.FromDSN(e.cfg.Database)
+		if err != nil {
+			return err
+		}
+		e.driver = drv
 	}
-	e.driver = drv
 
 	if e.cfg.DryRun {
-		e.log.Printf("[dry-run] Would connect to %s", drv.Name())
+		e.log.Printf("[dry-run] Would connect to %s", e.driver.Name())
 		return nil
 	}
 
-	e.log.Printf("Connecting to %s...", drv.Name())
-	if err := drv.Connect(ctx, e.cfg.Database); err != nil {
+	e.log.Printf("Connecting to %s...", e.driver.Name())
+	if err := e.driver.Connect(ctx, e.cfg.Database); err != nil {
 		return err
 	}
-	return drv.CreateVersionTable(ctx)
+	return e.driver.CreateVersionTable(ctx)
 }
 
 func (e *Engine) checkDirty(ctx context.Context) error {
@@ -179,8 +188,12 @@ func (e *Engine) checkDirty(ctx context.Context) error {
 	}
 	for _, a := range applied {
 		if a.Dirty {
-			return fmt.Errorf("version %d (%s) is dirty — fix the issue and run: seeder ... force %d",
-				a.Version, a.Name, a.Version)
+			if a.WhyDirty != "" {
+				return fmt.Errorf("version %d (%s) is dirty: %s — you need to down this version first to process",
+					a.Version, a.Name, a.WhyDirty)
+			}
+			return fmt.Errorf("version %d (%s) is dirty — you need to down this version first to process",
+				a.Version, a.Name)
 		}
 	}
 	return nil
@@ -269,16 +282,19 @@ func (e *Engine) applyUp(ctx context.Context, seed *loader.SeedFile) error {
 	}
 
 	// Mark as dirty before executing
-	if err := e.driver.RecordVersion(ctx, seed.Version, seed.Name, true); err != nil {
+	if err := e.driver.RecordVersion(ctx, seed.Version, seed.Name, true, ""); err != nil {
 		return err
 	}
 
 	if err := e.executeSeed(ctx, seed); err != nil {
+		if setErr := e.driver.SetDirty(ctx, seed.Version, true, err.Error()); setErr != nil {
+			e.log.Printf("Failed to set dirty error message: %v", setErr)
+		}
 		return err // leaves dirty=true for recovery
 	}
 
 	// Mark clean
-	return e.driver.SetDirty(ctx, seed.Version, false)
+	return e.driver.SetDirty(ctx, seed.Version, false, "")
 }
 
 func (e *Engine) applyDown(ctx context.Context, applied driver.AppliedSeed) error {
@@ -301,11 +317,14 @@ func (e *Engine) applyDown(ctx context.Context, applied driver.AppliedSeed) erro
 	}
 
 	// Mark dirty
-	if err := e.driver.SetDirty(ctx, applied.Version, true); err != nil {
+	if err := e.driver.SetDirty(ctx, applied.Version, true, ""); err != nil {
 		return err
 	}
 
 	if err := e.executeSeed(ctx, downFile); err != nil {
+		if setErr := e.driver.SetDirty(ctx, applied.Version, true, err.Error()); setErr != nil {
+			e.log.Printf("Failed to set dirty error message: %v", setErr)
+		}
 		return err
 	}
 

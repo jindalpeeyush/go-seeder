@@ -326,7 +326,14 @@ s.RunDown(context.Background(), 2)
 | `version` | BIGINT | Seed timestamp (primary key) |
 | `seed_name` | TEXT | Seed name |
 | `dirty` | BOOLEAN | Flag indicating if version execution failed |
+| `why_dirty` | TEXT / string | Error message if execution failed (`dirty` is true) |
 | `applied_at` | TIMESTAMP | When the seed was applied |
+
+### Dirty State & Recovery Behavior
+If a seed execution fails, `go-seeder` marks the version as `dirty = true` and records the error description in `why_dirty`.
+- **Applying Seeds (`up`)**: If any seed version is currently dirty, running `up` will fail immediately and display the reason (`why_dirty`) so that you know what failed.
+- **Rolling Back (`down`)**: Unlike other migration engines that block entirely when a dirty state occurs, `go-seeder` allows you to run `down` to roll back the latest applied seed even if it is dirty. If that rollback succeeds, the dirty version is deleted and the database state becomes clean again.
+- **Rollback Failures**: If a rollback step itself fails, the version remains dirty (with the new rollback error message stored in `why_dirty`) and execution stops immediately without processing subsequent rollback steps.
 
 ---
 

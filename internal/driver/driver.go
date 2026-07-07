@@ -14,6 +14,7 @@ type AppliedSeed struct {
 	Version   int64
 	Name      string
 	Dirty     bool
+	WhyDirty  string
 	AppliedAt time.Time
 }
 
@@ -28,8 +29,8 @@ type Driver interface {
 	// Version tracking
 	CreateVersionTable(ctx context.Context) error
 	GetAppliedVersions(ctx context.Context) ([]AppliedSeed, error)
-	RecordVersion(ctx context.Context, version int64, name string, dirty bool) error
-	SetDirty(ctx context.Context, version int64, dirty bool) error
+	RecordVersion(ctx context.Context, version int64, name string, dirty bool, whyDirty string) error
+	SetDirty(ctx context.Context, version int64, dirty bool, whyDirty string) error
 	RemoveVersion(ctx context.Context, version int64) error
 
 	Close(ctx context.Context) error

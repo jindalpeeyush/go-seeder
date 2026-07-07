@@ -102,15 +102,20 @@ func (d *MySQLDriver) CreateVersionTable(ctx context.Context) error {
 		version    BIGINT PRIMARY KEY,
 		seed_name  VARCHAR(255) NOT NULL,
 		dirty      BOOLEAN NOT NULL DEFAULT FALSE,
+		why_dirty  TEXT,
 		applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`
-	_, err := d.db.ExecContext(ctx, q)
-	return err
+	if _, err := d.db.ExecContext(ctx, q); err != nil {
+		return err
+	}
+	// Try adding why_dirty in case the table already existed without it
+	_, _ = d.db.ExecContext(ctx, "ALTER TABLE seeder_versions ADD COLUMN why_dirty TEXT")
+	return nil
 }
 
 func (d *MySQLDriver) GetAppliedVersions(ctx context.Context) ([]AppliedSeed, error) {
 	rows, err := d.db.QueryContext(ctx,
-		"SELECT version, seed_name, dirty, applied_at FROM seeder_versions ORDER BY version ASC")
+		"SELECT version, seed_name, dirty, COALESCE(why_dirty, '') AS why_dirty, applied_at FROM seeder_versions ORDER BY version ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +124,7 @@ func (d *MySQLDriver) GetAppliedVersions(ctx context.Context) ([]AppliedSeed, er
 	var seeds []AppliedSeed
 	for rows.Next() {
 		var s AppliedSeed
-		if err := rows.Scan(&s.Version, &s.Name, &s.Dirty, &s.AppliedAt); err != nil {
+		if err := rows.Scan(&s.Version, &s.Name, &s.Dirty, &s.WhyDirty, &s.AppliedAt); err != nil {
 			return nil, err
 		}
 		seeds = append(seeds, s)
@@ -127,16 +132,16 @@ func (d *MySQLDriver) GetAppliedVersions(ctx context.Context) ([]AppliedSeed, er
 	return seeds, rows.Err()
 }
 
-func (d *MySQLDriver) RecordVersion(ctx context.Context, version int64, name string, dirty bool) error {
+func (d *MySQLDriver) RecordVersion(ctx context.Context, version int64, name string, dirty bool, whyDirty string) error {
 	_, err := d.db.ExecContext(ctx,
-		"INSERT INTO seeder_versions (version, seed_name, dirty, applied_at) VALUES (?, ?, ?, ?)",
-		version, name, dirty, time.Now().UTC())
+		"INSERT INTO seeder_versions (version, seed_name, dirty, why_dirty, applied_at) VALUES (?, ?, ?, ?, ?)",
+		version, name, dirty, whyDirty, time.Now().UTC())
 	return err
 }
 
-func (d *MySQLDriver) SetDirty(ctx context.Context, version int64, dirty bool) error {
+func (d *MySQLDriver) SetDirty(ctx context.Context, version int64, dirty bool, whyDirty string) error {
 	_, err := d.db.ExecContext(ctx,
-		"UPDATE seeder_versions SET dirty = ? WHERE version = ?", dirty, version)
+		"UPDATE seeder_versions SET dirty = ?, why_dirty = ? WHERE version = ?", dirty, whyDirty, version)
 	return err
 }
 
