@@ -1,0 +1,13 @@
+linters:
+  enable:
+    - gofmt
+    - goimports
+    - errcheck
+    - ineffassign
+    - vet
+    - staticcheck
+    - unused
+  disable-all: true
+
+run:
+  timeout: 5m

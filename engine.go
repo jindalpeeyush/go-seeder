@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jindalpeeyush/go-seeder/internal/driver"
-	"github.com/jindalpeeyush/go-seeder/internal/loader"
+	"github.com/jindalpeeyush/go-seeder/driver"
+	"github.com/jindalpeeyush/go-seeder/loader"
 )
 
 // Config holds runtime configuration.

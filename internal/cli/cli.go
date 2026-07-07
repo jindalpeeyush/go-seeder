@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jindalpeeyush/go-seeder/internal/seeder"
+	seeder "github.com/jindalpeeyush/go-seeder"
 )
 
 const usage = `Usage:

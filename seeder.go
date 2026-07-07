@@ -26,7 +26,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/jindalpeeyush/go-seeder/internal/driver"
+	"github.com/jindalpeeyush/go-seeder/driver"
 )
 
 // Direction represents the execution direction of a seed operation (Up or Down).
