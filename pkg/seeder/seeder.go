@@ -29,31 +29,43 @@ import (
 	"github.com/jindalpeeyush/go-seeder/internal/driver"
 )
 
-// Direction type for seed direction.
+// Direction represents the execution direction of a seed operation (Up or Down).
 type Direction string
 
 const (
+	// Up indicates applying database seed data.
 	Up   Direction = "up"
+	// Down indicates rolling back/removing database seed data.
 	Down Direction = "down"
 )
 
-// DB is the public interface for seed functions.
+// DB defines the database operations interface available inside a seed function.
 type DB interface {
+	// ExecSQL executes a raw SQL query statement (PostgreSQL and MySQL only).
 	ExecSQL(ctx context.Context, query string) error
+	// InsertJSON inserts a slice of records/documents into the specified table/collection.
 	InsertJSON(ctx context.Context, table string, records []map[string]interface{}) error
+	// DeleteJSON removes records/documents matching the filter map from the specified table/collection.
 	DeleteJSON(ctx context.Context, table string, filter map[string]interface{}) error
+	// Truncate deletes all records/documents from the specified tables/collections.
 	Truncate(ctx context.Context, tables ...string) error
 }
 
-// SeedFunc is a function that performs a seed operation.
+// SeedFunc defines the signature of a seed function execution hook.
 type SeedFunc func(ctx context.Context, db DB) error
 
-// Seed represents a registered Go seed.
+// Seed represents a single registered seed containing version metadata and execution logic.
 type Seed struct {
+	// Version is the unique version identifier of the seed (usually a Unix timestamp).
 	Version   int64
+	// Name is the descriptive name of the seed.
 	Name      string
+	// Direction specifies if the seed is an Up or Down migration.
 	Direction Direction
+	// Driver specifies the target database engine: "postgres", "mysql", or "mongodb".
+	// If empty, the seed runs on any connected database.
 	Driver    string // postgres, mysql, mongodb
+	// Run is the function hook executed during the seed operation.
 	Run       SeedFunc
 }
 
@@ -109,18 +121,21 @@ func (a *dbAdapter) Truncate(ctx context.Context, t ...string) error {
 
 // --- Programmatic API ---
 
-// Options for creating a Seeder.
+// Options contains configuration options for initializing a new Seeder.
 type Options struct {
+	// Driver specifies the database driver. If empty, the driver is auto-detected from DSN.
 	Driver string
+	// DSN is the connection URI string.
 	DSN    string
 }
 
-// Seeder provides direct programmatic access.
+// Seeder provides direct programmatic control over database seed versions and execution.
 type Seeder struct {
 	driver driver.Driver
 }
 
-// New creates a Seeder and connects to the database.
+// New creates and initializes a Seeder, establishes a database connection,
+// and ensures the version tracking schema is created.
 func New(opts Options) (*Seeder, error) {
 	var drv driver.Driver
 	var err error
@@ -142,10 +157,11 @@ func New(opts Options) (*Seeder, error) {
 	return &Seeder{driver: drv}, nil
 }
 
-// DB returns the database handle.
+// DB returns a DB adapter wrapping the active database connection for manual seeding operations.
 func (s *Seeder) DB() DB { return &dbAdapter{drv: s.driver} }
 
-// RunUp runs all pending registered Up seeds matching this driver.
+// RunUp executes all pending registered Up seeds matching this database driver in ascending version order.
+// It fails immediately if any applied version in the database is currently marked dirty.
 func (s *Seeder) RunUp(ctx context.Context) error {
 	applied, err := s.driver.GetAppliedVersions(ctx)
 	if err != nil {
@@ -198,7 +214,10 @@ func (s *Seeder) RunUp(ctx context.Context) error {
 	return nil
 }
 
-// RunDown rolls back the last N applied seeds.
+// RunDown rolls back the last N applied seeds in descending version order.
+// If steps is <= 0, it rolls back all applied seeds.
+// It permits rolling back the latest version even if it is dirty,
+// but returns an error if any older version in the list is dirty.
 func (s *Seeder) RunDown(ctx context.Context, steps int) error {
 	applied, err := s.driver.GetAppliedVersions(ctx)
 	if err != nil {
@@ -256,7 +275,7 @@ func (s *Seeder) RunDown(ctx context.Context, steps int) error {
 	return nil
 }
 
-// Close releases the connection.
+// Close releases any database connections and resources held by the Seeder.
 func (s *Seeder) Close() error {
 	return s.driver.Close(context.Background())
 }

@@ -3,6 +3,8 @@
 A pluggable database seeder for Go — seed your **PostgreSQL**, **MySQL**, or **MongoDB** databases using **SQL files**, **JSON files**, or **Go code** with versioned up/down migrations.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/jindalpeeyush/go-seeder.svg)](https://pkg.go.dev/github.com/jindalpeeyush/go-seeder)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jindalpeeyush/go-seeder)](https://goreportcard.com/report/github.com/jindalpeeyush/go-seeder)
+[![CI Status](https://github.com/jindalpeeyush/go-seeder/actions/workflows/go.yml/badge.svg)](https://github.com/jindalpeeyush/go-seeder/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
