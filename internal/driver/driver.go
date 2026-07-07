@@ -45,8 +45,10 @@ func New(name string) (Driver, error) {
 		return &MySQLDriver{}, nil
 	case "mongodb", "mongo":
 		return &MongoDriver{}, nil
+	case "mock":
+		return GlobalMockDriver, nil
 	default:
-		return nil, fmt.Errorf("unsupported driver: %q (supported: postgres, mysql, mongodb)", name)
+		return nil, fmt.Errorf("unsupported driver: %q (supported: postgres, mysql, mongodb, mock)", name)
 	}
 }
 
@@ -60,7 +62,9 @@ func FromDSN(dsn string) (Driver, error) {
 		return &MongoDriver{}, nil
 	case strings.Contains(lower, "@tcp(") || strings.HasPrefix(lower, "mysql://"):
 		return &MySQLDriver{}, nil
+	case strings.HasPrefix(lower, "mock://"):
+		return GlobalMockDriver, nil
 	default:
-		return nil, fmt.Errorf("cannot auto-detect driver from DSN; supported URI schemes: postgres://, mongodb://, mysql://")
+		return nil, fmt.Errorf("cannot auto-detect driver from DSN; supported URI schemes: postgres://, mongodb://, mysql://, mock://")
 	}
 }
