@@ -12,10 +12,10 @@ A pluggable database seeder for Go — seed your **PostgreSQL**, **MySQL**, or *
 - 🗄️ **Multi-database** — PostgreSQL, MySQL, MongoDB
 - 📁 **Multi-format** — SQL files, JSON files, Go code
 - ⬆️ **Up / Down** — Apply and rollback seeds with version tracking
-- 🔢 **Version tracking** — Tracks applied seeds in `seeder_versions` table/collection
+- 🔢 **Version tracking** — Tracks applied seeds in `seeder_versions` table/collection with execution dirty state check
 - 🖥️ **CLI tool** — Install globally, run from any project
 - 📦 **Go library** — Import and use programmatically
-- 🔍 **Dry-run mode** — Preview without executing
+- 🔍 **Dry-run mode** — Preview operations without executing
 
 ---
 
@@ -39,6 +39,8 @@ go get github.com/jindalpeeyush/go-seeder
 
 ### 1. Create Seed Files
 
+Use `seeder create` to generate paired Up and Down seed files:
+
 ```bash
 # Create a SQL seed for PostgreSQL
 seeder create -driver=postgres -ext=sql -dir=database/seeders create_users
@@ -46,66 +48,107 @@ seeder create -driver=postgres -ext=sql -dir=database/seeders create_users
 # Create a JSON seed for MongoDB
 seeder create -driver=mongodb -ext=json -dir=database/seeders dummy_users
 
-# Create a Go seed for MySQL (default ext is go)
+# Create Go seeds for MySQL (default ext is go)
 seeder create -driver=mysql -dir=database/seeders add_admin
 ```
 
-This generates timestamped files:
+This generates timestamped file pairs:
 ```
 database/seeders/
-├── 1720310400_create_users.sql
-├── 1720310401_dummy_users.json
-└── 1720310402_add_admin.go
+├── 1720310400_create_users.up.sql
+├── 1720310400_create_users.down.sql
+├── 1720310401_dummy_users.up.json
+├── 1720310401_dummy_users.down.json
+├── 1720310402_add_admin.up.go
+└── 1720310402_add_admin.down.go
 ```
 
 ### 2. Edit Seed Files
 
-**SQL file** (`1720310400_create_users.sql`):
-```sql
--- +seeder Up
-INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com');
-INSERT INTO users (name, email) VALUES ('Bob', 'bob@example.com');
+#### SQL Files
+SQL files include a driver header on the first line.
 
--- +seeder Down
-DELETE FROM users WHERE email IN ('alice@example.com', 'bob@example.com');
+**Up file** (`1720310400_create_users.up.sql`):
+```sql
+-- driver: postgres
+INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com');
 ```
 
-**JSON file** (`1720310401_dummy_users.json`):
+**Down file** (`1720310400_create_users.down.sql`):
+```sql
+-- driver: postgres
+DELETE FROM users WHERE email = 'alice@example.com';
+```
+
+#### JSON Files
+JSON files require a `"driver"` and a `"table"` property.
+
+**Up file** (`1720310401_dummy_users.up.json`):
 ```json
 {
+  "driver": "mongodb",
   "table": "users",
-  "up": [
-    {"name": "Alice", "email": "alice@example.com"},
-    {"name": "Bob", "email": "bob@example.com"}
-  ],
-  "down": {
-    "truncate": true
-  }
+  "records": [
+    {"name": "Alice", "email": "alice@example.com"}
+  ]
 }
 ```
 
-**Go file** (`1720310402_add_admin.go`):
+**Down file** (`1720310401_dummy_users.down.json`):
+```json
+{
+  "driver": "mongodb",
+  "table": "users",
+  "truncate": true
+}
+```
+
+#### Go Files
+Go files register with the global seeder registry on import.
+
+**Up file** (`1720310402_add_admin.up.go`):
 ```go
 package seeds
 
 import (
-    "context"
-    "github.com/jindalpeeyush/go-seeder/pkg/seeder"
+	"context"
+	"github.com/jindalpeeyush/go-seeder/pkg/seeder"
 )
 
 func init() {
-    seeder.Register(&seeder.Seed{
-        Version: 1720310402,
-        Name:    "add_admin",
-        Up: func(ctx context.Context, db seeder.DB) error {
-            return db.InsertJSON(ctx, "users", []map[string]interface{}{
-                {"name": "Admin", "role": "admin"},
-            })
-        },
-        Down: func(ctx context.Context, db seeder.DB) error {
-            return db.ExecSQL(ctx, "DELETE FROM users WHERE role = 'admin'")
-        },
-    })
+	seeder.Register(&seeder.Seed{
+		Version:   1720310402,
+		Name:      "add_admin",
+		Direction: seeder.Up,
+		Driver:    "mysql",
+		Run: func(ctx context.Context, db seeder.DB) error {
+			return db.InsertJSON(ctx, "users", []map[string]interface{}{
+				{"name": "Admin", "role": "admin"},
+			})
+		},
+	})
+}
+```
+
+**Down file** (`1720310402_add_admin.down.go`):
+```go
+package seeds
+
+import (
+	"context"
+	"github.com/jindalpeeyush/go-seeder/pkg/seeder"
+)
+
+func init() {
+	seeder.Register(&seeder.Seed{
+		Version:   1720310402,
+		Name:      "add_admin",
+		Direction: seeder.Down,
+		Driver:    "mysql",
+		Run: func(ctx context.Context, db seeder.DB) error {
+			return db.ExecSQL(ctx, "DELETE FROM users WHERE role = 'admin'")
+		},
+	})
 }
 ```
 
@@ -121,7 +164,7 @@ seeder -path=database/seeders -database "postgres://user:pass@localhost:5432/myd
 # Rollback all seeds
 seeder -path=database/seeders -database "postgres://user:pass@localhost:5432/mydb?sslmode=disable" down
 
-# Force set version
+# Force set version (marks target version as clean, clears later versions)
 seeder -path=database/seeders -database "postgres://user:pass@localhost:5432/mydb?sslmode=disable" force 1720310400
 ```
 
@@ -141,10 +184,10 @@ seeder -help
 
 | Command | Description |
 |---------|-------------|
-| `create` | Create a new seed file |
+| `create` | Create a new pair of up and down seed files |
 | `up` | Apply all pending seeds |
-| `down [N]` | Roll back seeds (last N, or all) |
-| `force <ver>` | Force set database version |
+| `down [N]` | Roll back applied seeds (last N, or all) |
+| `force <ver>` | Force set database version and clear dirty state |
 
 ### Create Flags
 
@@ -158,8 +201,8 @@ seeder -help
 
 | Flag | Description |
 |------|-------------|
-| `-path` | Path to seed files directory (required for up/down/force) |
-| `-database` | Database connection URI (required for up/down/force) |
+| `-path` | Path to seed files directory |
+| `-database` | Database connection URI |
 | `-verbose` | Enable verbose output |
 | `--dry-run` | Preview operations without executing |
 
@@ -180,59 +223,33 @@ seeder -help
 ## Seed File Formats
 
 ### SQL Files
+Supports PostgreSQL and MySQL. Must contain a `-- driver:` comment line.
 
-Use `-- +seeder Up` and `-- +seeder Down` markers:
-
+**Up/Down file content example:**
 ```sql
--- +seeder Up
+-- driver: postgres
 CREATE TABLE IF NOT EXISTS products (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100)
 );
-INSERT INTO products (name) VALUES ('Widget');
-
--- +seeder Down
-DROP TABLE IF EXISTS products;
 ```
 
 ### JSON Files
+Supports MongoDB.
 
-**Single table:**
-```json
-{
-  "table": "users",
-  "up": [
-    {"name": "Alice", "email": "alice@example.com"}
-  ],
-  "down": {
-    "truncate": true
-  }
-}
-```
+**Up file content properties:**
+- `driver`: must be `"mongodb"`
+- `table`: collection name
+- `records`: slice of document maps to insert
 
-**Multiple tables:**
-```json
-[
-  {
-    "table": "users",
-    "up": [{"name": "Alice"}],
-    "down": {"truncate": true}
-  },
-  {
-    "table": "posts",
-    "up": [{"title": "Hello", "author": "Alice"}],
-    "down": {"delete": {"author": "Alice"}}
-  }
-]
-```
-
-**Down options:**
-- `{"truncate": true}` — Truncates the table
-- `{"delete": {"key": "value"}}` — Deletes matching records
+**Down file content properties:**
+- `driver`: must be `"mongodb"`
+- `table`: collection name
+- `truncate`: set to `true` to drop/truncate the collection
+- `delete`: filter document mapping to remove specific records
 
 ### Go Files
-
-Go seed files use `init()` to register seeds with the global registry. To execute them, build a custom binary that imports your seed package:
+Go seed files use `init()` to register seeds with the global registry. To execute them in your application, build a custom binary that imports your seed package:
 
 ```go
 // cmd/seed/main.go
@@ -244,7 +261,7 @@ import (
     "os"
 
     "github.com/jindalpeeyush/go-seeder/pkg/seeder"
-    _ "yourproject/database/seeders" // import seeds to trigger init()
+    _ "yourproject/database/seeders" // imports seeds to trigger init()
 )
 
 func main() {
@@ -278,17 +295,16 @@ s, err := seeder.New(seeder.Options{
 })
 defer s.Close()
 
-// Register seeds
+// Register seeds programmatically
 seeder.Register(&seeder.Seed{
-    Version: 1720310400,
-    Name:    "users",
-    Up: func(ctx context.Context, db seeder.DB) error {
+    Version:   1720310400,
+    Name:      "users",
+    Direction: seeder.Up,
+    Driver:    "postgres",
+    Run: func(ctx context.Context, db seeder.DB) error {
         return db.InsertJSON(ctx, "users", []map[string]interface{}{
             {"name": "Alice", "email": "alice@example.com"},
         })
-    },
-    Down: func(ctx context.Context, db seeder.DB) error {
-        return db.Truncate(ctx, "users")
     },
 })
 
@@ -303,32 +319,22 @@ s.RunDown(context.Background(), 2)
 
 ## Version Tracking
 
-go-seeder automatically creates a `seeder_versions` table (or collection in MongoDB) to track which seeds have been applied:
+`go-seeder` automatically creates a `seeder_versions` table (or collection in MongoDB) to track applied version states:
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `version` | BIGINT | Seed timestamp (primary key) |
 | `seed_name` | TEXT | Seed name |
+| `dirty` | BOOLEAN | Flag indicating if version execution failed |
 | `applied_at` | TIMESTAMP | When the seed was applied |
 
 ---
 
-## Notes
-
-- **MongoDB + SQL**: SQL files are not supported with MongoDB. Use JSON or Go files instead.
-- **Seed ordering**: Seeds are applied in ascending version (timestamp) order.
-- **Transactions**: SQL databases use transactions for JSON inserts — if one record fails, the entire batch rolls back.
-- **File naming**: `<unix_timestamp>_<seed_name>.<ext>` — the `create` command generates timestamps automatically.
-
----
-
-## Contributing
-
-1. Fork the repo
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+## Technical Details & Design Constraints
+- **Driver limits**: MongoDB only supports `.json` and `.go` extensions. SQL databases support `.sql` and `.go` extensions.
+- **Transactions**: SQL databases execute batches inside database transactions (auto-rollbacks on failures).
+- **Ordering**: Seeds are executed in ascending timestamp version order.
+- **File naming**: `<unix_timestamp>_<seed_name>.<direction>.<ext>` — generated automatically on `create`.
 
 ---
 
