@@ -40,7 +40,7 @@ const goUpTemplate = `package seeds
 import (
 	"context"
 
-	"github.com/jindalpeeyush/go-seeder/pkg/seeder"
+	"github.com/jindalpeeyush/go-seeder"
 )
 
 func init() {
@@ -66,7 +66,7 @@ const goDownTemplate = `package seeds
 import (
 	"context"
 
-	"github.com/jindalpeeyush/go-seeder/pkg/seeder"
+	"github.com/jindalpeeyush/go-seeder"
 )
 
 func init() {

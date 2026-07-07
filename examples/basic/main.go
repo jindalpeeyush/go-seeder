@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/jindalpeeyush/go-seeder/pkg/seeder"
+	"github.com/jindalpeeyush/go-seeder"
 )
 
 func init() {

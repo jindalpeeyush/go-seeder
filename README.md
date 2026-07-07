@@ -114,7 +114,7 @@ package seeds
 
 import (
 	"context"
-	"github.com/jindalpeeyush/go-seeder/pkg/seeder"
+	"github.com/jindalpeeyush/go-seeder"
 )
 
 func init() {
@@ -138,7 +138,7 @@ package seeds
 
 import (
 	"context"
-	"github.com/jindalpeeyush/go-seeder/pkg/seeder"
+	"github.com/jindalpeeyush/go-seeder"
 )
 
 func init() {
@@ -262,7 +262,7 @@ import (
     "log"
     "os"
 
-    "github.com/jindalpeeyush/go-seeder/pkg/seeder"
+    "github.com/jindalpeeyush/go-seeder"
     _ "yourproject/database/seeders" // imports seeds to trigger init()
 )
 
@@ -288,7 +288,7 @@ func main() {
 Use `go-seeder` programmatically in your Go application:
 
 ```go
-import "github.com/jindalpeeyush/go-seeder/pkg/seeder"
+import "github.com/jindalpeeyush/go-seeder"
 
 // Create a seeder
 s, err := seeder.New(seeder.Options{
