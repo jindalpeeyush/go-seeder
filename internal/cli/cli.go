@@ -40,8 +40,8 @@ Global Flags:
   --dry-run Preview operations without executing
 
 File Format:
-  Seed files are named: <timestamp>_<seed_name>.<ext>
-  Example: 1720310400_create_users.sql
+  Seed files are named: <timestamp>_<seed_name>.<direction>.<ext>
+  Example: 1720310400_create_users.up.sql
 
 Documentation: https://github.com/jindalpeeyush/go-seeder
 `
